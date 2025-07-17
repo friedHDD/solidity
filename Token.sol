@@ -8,13 +8,13 @@ contract Token {
 
     // 设置总供给和空投总量
     uint256 public totalAirdrop = 50000;
-    uint256 public airdrop = 50;
+    uint256 public airdropPerUser = 50;
     uint256 public totalSupply = 100000000+totalAirdrop;
 
 
     //设置所有者和空投箱
-    address public owner;
-    address public airdropBox;
+    address private _owner;
+    address private _airdropBox;
 
     //kv：空投领取记录和余额表
     mapping(address => bool) airdropClaimLog;
@@ -25,13 +25,26 @@ contract Token {
     event Destroy(address indexed addr, uint256 amount);
 
 
-    constructor() {
-        //init
-        balances[msg.sender] = totalSupply;
-        owner = msg.sender;//之后鉴权用
+    constructor(address airdropBoxAddr) {
+        require(airdropBoxAddr != address(0), "Airdrop box address cannot be the zero address");
+        uint256 ownerSupply = totalSupply - totalAirdrop;
+        _owner = msg.sender;//之后鉴权用
+        _airdropBox = airdropBoxAddr;
 
-        balances[airdropBox] = totalAirdrop;
+        balances[_owner] = ownerSupply;
+        emit Transfer(address(0), _owner, ownerSupply);
+        balances[_airdropBox] = totalAirdrop;
+        emit Transfer(address(0), _airdropBox, totalAirdrop);
     }
+
+    function owner() public view returns (address) {
+        return _owner;
+    }
+
+    function airdropBox() public view returns (address) {
+        return _airdropBox;
+    }
+
 
     function transfer(address to, uint256 amount) external {
         require(balances[msg.sender] >= amount, "Not enough tokens");
@@ -44,31 +57,35 @@ contract Token {
         emit Transfer(msg.sender, to, amount);
     }
 
+    function getBalance(address account) external view returns (uint256) {
+        return balances[account];
+    }
+
 
     function claimAirdrop(address to) external {
-        require(balances[airdropBox] >= airdrop, "Airdrop box is empty");
+        require(balances[_airdropBox] >= airdropPerUser, "Airdrop box is empty");
         require(!airdropClaimLog[to], "You have already claimed the airdrop");
         
         //给空投
-        balances[to] += airdrop;
-        balances[airdropBox] -= airdrop;
+        balances[to] += airdropPerUser;
+        balances[_airdropBox] -= airdropPerUser;
 
 
         //记录领取过的地址
         airdropClaimLog[to] = true;
 
        
-        emit Transfer(airdropBox, to, airdrop);
+        emit Transfer(_airdropBox, to, airdropPerUser);
     }
 
+  /**For admin */
 
-
-    function getBalance(address account) external view returns (uint256) {
-        return balances[account];
+    modifier onlyOwner() {
+        require(msg.sender == _owner, "Only the owner can call this function");
+        _;
     }
 
-    function mint(address to, uint256 amount) external {
-        require(msg.sender == owner, "Only the owner can mint tokens");
+    function mint(address to, uint256 amount) external onlyOwner{
         //总供给+ 目标地址+
         totalSupply += amount;
         balances[to] += amount;
@@ -76,8 +93,7 @@ contract Token {
         emit Transfer(address(0), to, amount);
     }
 
-    function destroy(address addr, uint256 amount) external {
-        require(msg.sender == owner, "Only the owner can destroy tokens");
+    function destroy(address addr, uint256 amount) external onlyOwner{
         require(balances[addr] >= amount, "Not enough tokens");
         //总供给- 目标地址-
         totalSupply -= amount;
